@@ -1,0 +1,36 @@
+# =============================================
+# NOTIFICATION SERVICE CONFIGURATION
+# =============================================
+# Served by Config Server to notification-service on startup
+
+server:
+  port: 8085
+
+# Eureka registration
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+# Kafka — notification-service consumes events
+spring.kafka:
+  bootstrap-servers: localhost:9092
+  consumer:
+    group-id: notification-group
+    auto-offset-reset: earliest
+    key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+    properties:
+      spring.json.trusted.packages: "*"
+
+# Mail Configuration (using a fake SMTP for development)
+spring.mail:
+  host: localhost
+  port: 1025
+  username: ""
+  password: ""
+  properties:
+    mail.smtp.auth: false
+    mail.smtp.starttls.enable: false

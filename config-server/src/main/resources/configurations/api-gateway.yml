@@ -1,0 +1,24 @@
+# =============================================
+# API GATEWAY CONFIGURATION
+# =============================================
+# Served by Config Server to api-gateway on startup
+
+server:
+  port: 8080
+
+# Eureka registration
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+# Gateway route definitions will be added in Step 5
+spring:
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
