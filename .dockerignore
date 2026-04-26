@@ -1,0 +1,17 @@
+target/
+!target/*.jar
+.git
+.gitignore
+.idea
+*.iml
+*.iws
+*.ipr
+.settings
+.project
+.classpath
+.DS_Store
+*.log
+*.md
+docker-compose.yml
+Dockerfile
+.dockerignore
