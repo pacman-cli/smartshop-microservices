@@ -1,5 +1,6 @@
 package com.smartshop.gateway.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
@@ -23,18 +24,28 @@ import java.util.List;
 @Configuration
 public class CorsConfig {
 
+    @Value("${app.cors.allowed-origin-patterns:http://localhost:3000,http://localhost:5173}")
+    private List<String> allowedOriginPatterns;
+
     @Bean
     public CorsWebFilter corsWebFilter() {
         CorsConfiguration corsConfig = new CorsConfiguration();
 
-        // Allow requests from any origin (restrict in production)
-        corsConfig.setAllowedOrigins(List.of("*"));
+        // Keep local frontend origins open by default while allowing restriction
+        // through configuration in higher environments.
+        corsConfig.setAllowedOriginPatterns(allowedOriginPatterns);
 
         // Allow these HTTP methods
         corsConfig.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
 
         // Allow these headers in requests
         corsConfig.setAllowedHeaders(List.of("*"));
+
+        // Allow credentials (cookies, authorization headers)
+        corsConfig.setAllowCredentials(true);
+
+        // Browsers can cache preflight results and avoid extra round-trips.
+        corsConfig.setMaxAge(3600L);
 
         // Apply CORS config to all routes
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
