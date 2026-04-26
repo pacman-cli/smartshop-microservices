@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- Resolve spring.application.name for use in log patterns -->
+    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="smartshop"/>
+
+    <!-- ===== Console Appender (human-readable, for local development) ===== -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [${appName}] [%X{traceId:-},%X{spanId:-}] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- ===== JSON Appender (structured, for Docker/ELK/production) ===== -->
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>traceId</includeMdcKeyName>
+            <includeMdcKeyName>spanId</includeMdcKeyName>
+            <customFields>{"service":"${appName}"}</customFields>
+            <timeZone>UTC</timeZone>
+        </encoder>
+    </appender>
+
+    <!-- ===== Profile-based root logger ===== -->
+
+    <!-- Default / dev profile: human-readable console -->
+    <springProfile name="default | dev">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+        <!-- Debug logging for SmartShop classes in dev -->
+        <logger name="com.smartshop" level="DEBUG"/>
+    </springProfile>
+
+    <!-- Docker / prod profile: structured JSON -->
+    <springProfile name="docker | prod">
+        <root level="INFO">
+            <appender-ref ref="JSON"/>
+        </root>
+        <logger name="com.smartshop" level="INFO"/>
+    </springProfile>
+
+</configuration>
