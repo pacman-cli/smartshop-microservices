@@ -45,6 +45,7 @@
 - Step 34: Kubernetes Overview (Optional) ⬜
 
 ## PHASE 6: Final Deliverables
-- Step 35: Postman Collection ⬜
-- Step 36: Full README Documentation ⬜
+- Step 35: Postman Collection ✅
+- Step 36: Full README Documentation ✅
+- Step 37: GitHub Project Structure & Cleanup ⬜
 - Step 37: GitHub Project Structure & Cleanup ⬜
