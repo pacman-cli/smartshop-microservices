@@ -37,6 +37,11 @@ public class ProductController {
         return productService.getProductById(id);
     }
 
+    @GetMapping("/batch")
+    public List<ProductResponse> getProductsByIds(@RequestParam("ids") List<Long> ids) {
+        return productService.getProductsByIds(ids);
+    }
+
     @GetMapping(params = "sku")
     public ProductResponse getProductBySku(@RequestParam String sku) {
         return productService.getProductBySku(sku);

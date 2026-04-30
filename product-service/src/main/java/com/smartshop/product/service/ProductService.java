@@ -39,6 +39,17 @@ public class ProductService {
         return mapToResponse(product);
     }
 
+    public List<ProductResponse> getProductsByIds(List<Long> ids) {
+        log.info("Fetching products with ids: {}", ids);
+        List<Product> products = productRepository.findAllById(ids);
+        if (products.size() != ids.size()) {
+            List<Long> foundIds = products.stream().map(Product::getId).toList();
+            List<Long> missing = ids.stream().filter(id -> !foundIds.contains(id)).toList();
+            throw new ProductNotFoundException("Products not found with IDs: " + missing);
+        }
+        return products.stream().map(this::mapToResponse).toList();
+    }
+
     public ProductResponse getProductBySku(String sku) {
         log.info("Fetching product with sku: {}", sku);
         Product product = productRepository.findBySku(sku.trim().toUpperCase())
