@@ -22,6 +22,10 @@ public interface ProductServiceClient {
     @CircuitBreaker(name = "productService", fallbackMethod = "getProductFallback")
     ProductResponse getProductById(@PathVariable("id") Long id);
 
+    @GetMapping("/api/products/batch")
+    @CircuitBreaker(name = "productService", fallbackMethod = "getProductsByIdsFallback")
+    List<ProductResponse> getProductsByIds(@RequestParam("ids") List<Long> ids);
+
     @PutMapping("/api/products/{id}/reduce-stock")
     @CircuitBreaker(name = "productService", fallbackMethod = "reduceStockFallback")
     ProductResponse reduceStock(@PathVariable("id") Long id, @RequestParam("quantity") int quantity);
@@ -56,5 +60,9 @@ public interface ProductServiceClient {
 
     default List<ProductResponse> batchRestoreStockFallback(BatchStockRequest request, Throwable t) {
         throw new RuntimeException("Product service is unavailable. Cannot batch restore stock.", t);
+    }
+
+    default List<ProductResponse> getProductsByIdsFallback(List<Long> ids, Throwable t) {
+        throw new RuntimeException("Product service is unavailable. Cannot fetch products by ids.", t);
     }
 }

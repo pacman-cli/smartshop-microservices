@@ -22,6 +22,9 @@ public class OrderRequest {
     @Min(value = 1, message = "User ID must be positive")
     private Long userId;
 
+    @Size(max = 100, message = "Idempotency key cannot exceed 100 characters")
+    private String idempotencyKey;
+
     @Size(max = 500, message = "Shipping address cannot exceed 500 characters")
     private String shippingAddress;
 

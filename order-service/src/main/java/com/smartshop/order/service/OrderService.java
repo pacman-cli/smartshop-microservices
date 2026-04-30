@@ -57,22 +57,41 @@ public class OrderService {
     public OrderResponse createOrder(OrderRequest request) {
         log.info("Creating order for user: {}", request.getUserId());
 
+        // Check for existing orders with same idempotency key
+        if (request.getIdempotencyKey() != null) {
+            orderRepository.findByOrderNumber(request.getIdempotencyKey())
+                    .ifPresent(existing -> {
+                        throw new IllegalStateException(
+                                "Order with this idempotency key already exists: " + request.getIdempotencyKey());
+            });
+        }
+
         // 1. Validate user
         UserResponse user = userServiceClient.getUserById(request.getUserId());
 
-        // 2. Build order
+        // 2. Build order - use idempotency key if provided
+        String orderNumber = request.getIdempotencyKey() != null
+                ? request.getIdempotencyKey()
+                : generateOrderNumber();
         Order order = Order.builder()
-                .orderNumber(generateOrderNumber())
+                .orderNumber(orderNumber)
                 .userId(user.getId())
                 .userEmail(user.getEmail())
                 .status(OrderStatus.PENDING)
                 .shippingAddress(request.getShippingAddress())
                 .build();
 
-        // 3. Fetch product details and build order items + stock reduction list
+        // 3. Fetch product details in batch and build order items + stock reduction list
+        List<Long> productIds = request.getItems().stream()
+                .map(OrderItemRequest::getProductId)
+                .toList();
+        Map<Long, ProductResponse> productMap = productServiceClient.getProductsByIds(productIds)
+                .stream()
+                .collect(Collectors.toMap(ProductResponse::getId, p -> p));
+
         List<StockItem> stockItems = new ArrayList<>();
         for (OrderItemRequest itemRequest : request.getItems()) {
-            ProductResponse product = productServiceClient.getProductById(itemRequest.getProductId());
+            ProductResponse product = productMap.get(itemRequest.getProductId());
 
             stockItems.add(StockItem.builder()
                     .productId(product.getId())

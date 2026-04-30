@@ -2,6 +2,9 @@
 -- V1__create_orders_tables.sql
 -- Order Service — Initial schema (orders + order_items)
 -- =============================================
+-- NOTE: user_id and product_id reference logical relationships
+-- to other services' data. No DB-level foreign keys due to
+-- database-per-service pattern (microservices architecture).
 
 -- =============================================
 -- 1. Orders table
