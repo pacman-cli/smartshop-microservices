@@ -41,13 +41,14 @@ public class JwtUtil {
     /**
      * Generate a JWT token for the given user.
      */
-    public String generateToken(String email, String role) {
+    public String generateToken(String email, String role, Long userId) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expiration);
 
         return Jwts.builder()
                 .subject(email)
                 .claim("role", role)
+                .claim("userId", userId.toString())
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(secretKey)
@@ -66,6 +67,11 @@ public class JwtUtil {
      */
     public String extractRole(String token) {
         return extractClaims(token).get("role", String.class);
+    }
+
+    public Long extractUserId(String token) {
+        String userId = extractClaims(token).get("userId", String.class);
+        return userId != null ? Long.parseLong(userId) : null;
     }
 
     /**
