@@ -1,0 +1,18 @@
+package com.smartshop.order.client;
+
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+
+@FeignClient(name = "payment-service")
+public interface PaymentServiceClient {
+
+    @PostMapping("/api/payments/process")
+    @CircuitBreaker(name = "paymentService", fallbackMethod = "processPaymentFallback")
+    PaymentServiceResponse processPayment(@RequestBody PaymentServiceRequest request);
+
+    default PaymentServiceResponse processPaymentFallback(PaymentServiceRequest request, Throwable t) {
+        throw new RuntimeException("Payment service is unavailable. Cannot process payment for order: " + request.getOrderNumber(), t);
+    }
+}

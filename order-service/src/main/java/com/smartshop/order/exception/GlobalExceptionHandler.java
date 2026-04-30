@@ -45,9 +45,9 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(body);
     }
 
-    @ExceptionHandler(jakarta.validation.constraints.ConstraintViolationException.class)
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
     public ResponseEntity<Map<String, Object>> handleConstraintViolation(
-            jakarta.validation.constraints.ConstraintViolationException ex) {
+            jakarta.validation.ConstraintViolationException ex) {
         log.warn("Constraint violation: {}", ex.getMessage());
 
         String message = ex.getConstraintViolations().stream()
