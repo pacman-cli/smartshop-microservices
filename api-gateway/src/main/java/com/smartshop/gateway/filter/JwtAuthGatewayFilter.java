@@ -87,11 +87,20 @@ public class JwtAuthGatewayFilter implements GlobalFilter, Ordered {
 
             String email = claims.getSubject();
             String role = claims.get("role", String.class);
+            String userId = claims.get("userId", String.class);
+
+            // Validate required claims
+            if (email == null || email.isBlank()) {
+                log.warn("JWT missing required claim: subject (email)");
+                exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+                return exchange.getResponse().setComplete();
+            }
 
             // Pass user info to downstream services via headers
             ServerHttpRequest modifiedRequest = request.mutate()
                     .header("X-User-Email", email)
-                    .header("X-User-Role", role)
+                    .header("X-User-Role", role != null ? role : "")
+                    .header("X-User-Id", userId != null ? userId : "")
                     .build();
 
             return chain.filter(exchange.mutate().request(modifiedRequest).build());
