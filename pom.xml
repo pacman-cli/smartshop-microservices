@@ -26,7 +26,9 @@
     </description>
 
     <!-- ===== All Child Modules ===== -->
+    <!-- smartshop-common-contracts MUST be first: services depend on it -->
     <modules>
+        <module>smartshop-common-contracts</module>
         <module>discovery-server</module>
         <module>config-server</module>
         <module>api-gateway</module>
