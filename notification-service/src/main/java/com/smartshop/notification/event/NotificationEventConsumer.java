@@ -1,7 +1,7 @@
 package com.smartshop.notification.event;
 
-import com.smartshop.notification.dto.OrderCreatedEvent;
-import com.smartshop.notification.dto.PaymentCompletedEvent;
+import com.smartshop.contracts.event.OrderCreatedEvent;
+import com.smartshop.contracts.event.PaymentCompletedEvent;
 import com.smartshop.notification.service.EmailService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

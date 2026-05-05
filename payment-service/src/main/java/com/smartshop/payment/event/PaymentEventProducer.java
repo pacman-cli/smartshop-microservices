@@ -1,5 +1,6 @@
 package com.smartshop.payment.event;
 
+import com.smartshop.contracts.event.PaymentCompletedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;

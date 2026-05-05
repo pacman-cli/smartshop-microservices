@@ -1,10 +1,10 @@
 package com.smartshop.payment.service;
 
+import com.smartshop.contracts.event.PaymentCompletedEvent;
 import com.smartshop.payment.dto.PaymentRequest;
 import com.smartshop.payment.dto.PaymentResponse;
 import com.smartshop.payment.entity.Payment;
 import com.smartshop.payment.entity.PaymentStatus;
-import com.smartshop.payment.event.PaymentCompletedEvent;
 import com.smartshop.payment.event.PaymentEventProducer;
 import com.smartshop.payment.exception.PaymentNotFoundException;
 import com.smartshop.payment.exception.PaymentProcessingException;

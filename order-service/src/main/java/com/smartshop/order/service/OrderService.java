@@ -1,5 +1,7 @@
 package com.smartshop.order.service;
 
+import com.smartshop.contracts.event.OrderCreatedEvent;
+import com.smartshop.contracts.event.PaymentCompletedEvent;
 import com.smartshop.order.client.BatchStockRequest;
 import com.smartshop.order.client.ProductResponse;
 import com.smartshop.order.client.ProductServiceClient;
@@ -13,7 +15,6 @@ import com.smartshop.order.dto.OrderResponse;
 import com.smartshop.order.entity.Order;
 import com.smartshop.order.entity.OrderItem;
 import com.smartshop.order.entity.OrderStatus;
-import com.smartshop.order.event.OrderCreatedEvent;
 import com.smartshop.order.event.OrderEventProducer;
 import com.smartshop.order.exception.OrderNotFoundException;
 import com.smartshop.order.repository.OrderRepository;
@@ -25,7 +26,6 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -136,6 +136,44 @@ public class OrderService {
         }
 
         return mapToResponse(savedOrder);
+    }
+
+    /**
+     * Handle payment result from Kafka event.
+     * - COMPLETED payment -> Order status = CONFIRMED
+     * - FAILED payment    -> Order status = PAYMENT_FAILED + restore stock
+     */
+    @Transactional
+    public void handlePaymentResult(PaymentCompletedEvent event) {
+        Order order = orderRepository.findByOrderNumber(event.getOrderNumber())
+                .orElse(null);
+
+        if (order == null) {
+            log.error("Order not found for payment event: {}", event.getOrderNumber());
+            return;
+        }
+
+        if (order.getStatus() != OrderStatus.PENDING) {
+            log.warn("Order {} is not PENDING (current: {}), skipping payment update",
+                    event.getOrderNumber(), order.getStatus());
+            return;
+        }
+
+        if ("COMPLETED".equals(event.getStatus())) {
+            order.setStatus(OrderStatus.CONFIRMED);
+            orderRepository.save(order);
+            log.info("Order {} confirmed after successful payment (txn: {})",
+                    event.getOrderNumber(), event.getTransactionId());
+
+        } else if ("FAILED".equals(event.getStatus())) {
+            order.setStatus(OrderStatus.PAYMENT_FAILED);
+            orderRepository.save(order);
+            log.warn("Order {} marked as PAYMENT_FAILED (reason: {})",
+                    event.getOrderNumber(), event.getFailureReason());
+
+            // Restore stock for all items in the order
+            restoreStockForOrder(order);
+        }
     }
 
     public OrderResponse getOrderById(Long id) {
