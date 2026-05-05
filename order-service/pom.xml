@@ -16,6 +16,13 @@
     <description>Handles order creation and order history</description>
 
     <dependencies>
+        <!-- Shared contracts: events, DTOs, security filter -->
+        <dependency>
+            <groupId>com.smartshop</groupId>
+            <artifactId>smartshop-common-contracts</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -16,6 +16,13 @@
     <description>Manages product catalog — CRUD operations</description>
 
     <dependencies>
+        <!-- Shared contracts: DTOs, security filter -->
+        <dependency>
+            <groupId>com.smartshop</groupId>
+            <artifactId>smartshop-common-contracts</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

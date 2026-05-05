@@ -16,6 +16,13 @@
     <description>Listens to Kafka events and sends notifications</description>
 
     <dependencies>
+        <!-- Shared contracts: events, DTOs -->
+        <dependency>
+            <groupId>com.smartshop</groupId>
+            <artifactId>smartshop-common-contracts</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

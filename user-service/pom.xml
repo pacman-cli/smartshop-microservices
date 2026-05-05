@@ -16,6 +16,13 @@
     <description>Handles user registration, login, JWT authentication</description>
 
     <dependencies>
+        <!-- Shared contracts: DTOs -->
+        <dependency>
+            <groupId>com.smartshop</groupId>
+            <artifactId>smartshop-common-contracts</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
