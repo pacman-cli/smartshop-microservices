@@ -1,6 +1,6 @@
 package com.smartshop.user.controller;
 
-import com.smartshop.user.dto.PagedResponse;
+import com.smartshop.contracts.dto.PagedResponse;
 import com.smartshop.user.dto.UserResponse;
 import com.smartshop.user.service.UserService;
 import jakarta.validation.constraints.Email;

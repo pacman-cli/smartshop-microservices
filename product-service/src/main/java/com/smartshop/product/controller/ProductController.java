@@ -1,7 +1,7 @@
 package com.smartshop.product.controller;
 
 import com.smartshop.product.dto.BatchStockRequest;
-import com.smartshop.product.dto.PagedResponse;
+import com.smartshop.contracts.dto.PagedResponse;
 import com.smartshop.product.dto.ProductRequest;
 import com.smartshop.product.dto.ProductResponse;
 import com.smartshop.product.service.ProductService;

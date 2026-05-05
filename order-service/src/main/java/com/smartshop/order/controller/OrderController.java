@@ -2,7 +2,7 @@ package com.smartshop.order.controller;
 
 import com.smartshop.order.dto.OrderRequest;
 import com.smartshop.order.dto.OrderResponse;
-import com.smartshop.order.dto.PagedResponse;
+import com.smartshop.contracts.dto.PagedResponse;
 import com.smartshop.order.entity.OrderStatus;
 import com.smartshop.order.service.OrderService;
 import jakarta.validation.Valid;
