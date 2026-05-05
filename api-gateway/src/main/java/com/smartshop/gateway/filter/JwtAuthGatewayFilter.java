@@ -47,7 +47,7 @@ public class JwtAuthGatewayFilter implements GlobalFilter, Ordered {
             "/api/users"
     );
 
-    public JwtAuthGatewayFilter(@Value("${jwt.secret:smartshop-secret-key-for-jwt-token-generation-min-256-bits-long-key}") String secret) {
+    public JwtAuthGatewayFilter(@Value("${jwt.secret:${JWT_SECRET:smartshop-secret-key-for-jwt-token-generation-min-256-bits-long-key}}") String secret) {
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
