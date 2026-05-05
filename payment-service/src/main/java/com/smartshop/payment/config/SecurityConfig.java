@@ -1,7 +1,6 @@
 package com.smartshop.payment.config;
 
-import com.smartshop.payment.security.GatewayHeaderAuthFilter;
-import lombok.RequiredArgsConstructor;
+import com.smartshop.contracts.security.GatewayHeaderAuthFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -20,10 +19,12 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  */
 @Configuration
 @EnableMethodSecurity
-@RequiredArgsConstructor
 public class SecurityConfig {
 
-    private final GatewayHeaderAuthFilter gatewayHeaderAuthFilter;
+    @Bean
+    public GatewayHeaderAuthFilter gatewayHeaderAuthFilter() {
+        return new GatewayHeaderAuthFilter();
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -40,7 +41,7 @@ public class SecurityConfig {
                         // All other payment endpoints require authentication
                         .requestMatchers("/api/payments/**").authenticated()
                         .anyRequest().authenticated())
-                .addFilterBefore(gatewayHeaderAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(gatewayHeaderAuthFilter(), UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 }

@@ -1,7 +1,6 @@
 package com.smartshop.product.config;
 
-import com.smartshop.product.security.GatewayHeaderAuthFilter;
-import lombok.RequiredArgsConstructor;
+import com.smartshop.contracts.security.GatewayHeaderAuthFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -21,14 +20,16 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  *
  * - GET /api/products/** is public (browsing)
  * - POST/PUT/DELETE /api/products/** require ADMIN role
- * - Stock reduction/restoration endpoints are internal (service-to-service)
+ * - Stock reduction/restoration endpoints require authentication (service-to-service)
  */
 @Configuration
 @EnableMethodSecurity
-@RequiredArgsConstructor
 public class SecurityConfig {
 
-    private final GatewayHeaderAuthFilter gatewayHeaderAuthFilter;
+    @Bean
+    public GatewayHeaderAuthFilter gatewayHeaderAuthFilter() {
+        return new GatewayHeaderAuthFilter();
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -43,18 +44,18 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/**").permitAll()
                         // GET on products is public (browsing catalog)
                         .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
-                        // Stock endpoints are internal (service-to-service via Feign)
-                        .requestMatchers(HttpMethod.PUT, "/api/products/*/reduce-stock").permitAll()
-                        .requestMatchers(HttpMethod.PUT, "/api/products/*/restore-stock").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/products/batch-reduce-stock").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/products/batch-restore-stock").permitAll()
+                        // Stock endpoints require authentication (service-to-service via Feign)
+                        .requestMatchers(HttpMethod.PUT, "/api/products/*/reduce-stock").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/api/products/*/restore-stock").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/products/batch-reduce-stock").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/products/batch-restore-stock").authenticated()
                         // Product CRUD (create, update, delete) requires ADMIN
                         .requestMatchers(HttpMethod.POST, "/api/products/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/products/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/products/**").hasRole("ADMIN")
                         // Everything else requires authentication
                         .anyRequest().authenticated())
-                .addFilterBefore(gatewayHeaderAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(gatewayHeaderAuthFilter(), UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 }

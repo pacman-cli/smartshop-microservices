@@ -1,10 +1,8 @@
 package com.smartshop.order.config;
 
-import com.smartshop.order.security.GatewayHeaderAuthFilter;
-import lombok.RequiredArgsConstructor;
+import com.smartshop.contracts.security.GatewayHeaderAuthFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -15,17 +13,17 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 /**
  * Security configuration for order-service.
  *
- * - GET on orders requires authentication (users see their own orders)
- * - POST (create order) requires authentication
- * - Status updates and cancellation require authentication
- * - Actuator endpoints are public
+ * All order endpoints require authentication via gateway headers.
+ * Actuator endpoints are public for health checks.
  */
 @Configuration
 @EnableMethodSecurity
-@RequiredArgsConstructor
 public class SecurityConfig {
 
-    private final GatewayHeaderAuthFilter gatewayHeaderAuthFilter;
+    @Bean
+    public GatewayHeaderAuthFilter gatewayHeaderAuthFilter() {
+        return new GatewayHeaderAuthFilter();
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -37,10 +35,9 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/**").permitAll()
-                        // All order endpoints require authentication
                         .requestMatchers("/api/orders/**").authenticated()
                         .anyRequest().authenticated())
-                .addFilterBefore(gatewayHeaderAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(gatewayHeaderAuthFilter(), UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 }
