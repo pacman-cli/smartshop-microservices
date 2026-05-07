@@ -88,6 +88,24 @@ resilience4j:
         timeout-duration: 5s
       userService:
         timeout-duration: 5s
+  bulkhead:
+    instances:
+      productService:
+        max-concurrent-calls: 10
+        max-wait-duration: 0
+      userService:
+        max-concurrent-calls: 10
+        max-wait-duration: 0
+  thread-pool-bulkhead:
+    instances:
+      productService:
+        max-thread-pool-size: 10
+        core-thread-pool-size: 5
+        queue-capacity: 20
+      userService:
+        max-thread-pool-size: 10
+        core-thread-pool-size: 5
+        queue-capacity: 20
 
 # Feign client timeouts
 spring.cloud.openfeign:
