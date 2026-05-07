@@ -1,5 +1,6 @@
 package com.smartshop.product.entity;
 
+import com.smartshop.contracts.audit.BaseAuditEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -16,11 +17,10 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.Where;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 /**
  * Product Entity — maps to the "products" table in PostgreSQL (product_db).
@@ -32,14 +32,17 @@ import java.time.LocalDateTime;
         @Index(name = "idx_products_category", columnList = "category"),
         @Index(name = "idx_products_name", columnList = "name"),
         @Index(name = "idx_products_sku", columnList = "sku", unique = true),
-        @Index(name = "idx_products_active", columnList = "active")
+        @Index(name = "idx_products_active", columnList = "active"),
+        @Index(name = "idx_products_deleted", columnList = "deleted")
     })
+@SQLDelete(sql = "UPDATE products SET deleted = true WHERE id = ?")
+@Where(clause = "deleted = false")
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Product {
+public class Product extends BaseAuditEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -71,13 +74,9 @@ public class Product {
     @Builder.Default
     private Boolean active = true;
 
-    @CreationTimestamp
-    @Column(name = "created_at", updatable = false)
-    private LocalDateTime createdAt;
-
-    @UpdateTimestamp
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean deleted = false;
 
     @PrePersist
     @PreUpdate
@@ -105,6 +104,6 @@ public class Product {
             throw new IllegalStateException(
                     "Insufficient stock for product: " + name + " (available: " + quantity + ", requested: " + amount + ")");
         }
-        this.quantity -= amount;
+        this.setQuantity(this.getQuantity() - amount);
     }
 }
