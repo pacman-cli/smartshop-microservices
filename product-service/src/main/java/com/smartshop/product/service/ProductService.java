@@ -6,10 +6,12 @@ import com.smartshop.product.dto.ProductResponse;
 import com.smartshop.product.dto.StockItem;
 import com.smartshop.product.entity.Category;
 import com.smartshop.product.entity.Product;
+import com.smartshop.product.entity.IdempotencyRecord;
 import com.smartshop.product.exception.DuplicateSkuException;
 import com.smartshop.product.exception.InsufficientStockException;
 import com.smartshop.product.exception.ProductNotFoundException;
 import com.smartshop.product.repository.ProductRepository;
+import com.smartshop.product.repository.IdempotencyRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -32,6 +34,7 @@ public class ProductService {
     private static final int MAX_PAGE_SIZE = 100;
 
     private final ProductRepository productRepository;
+    private final IdempotencyRepository idempotencyRepository;
 
     public ProductResponse getProductById(Long id) {
         log.info("Fetching product with id: {}", id);
@@ -178,9 +181,18 @@ public class ProductService {
      */
     @Transactional
     public List<ProductResponse> batchReduceStock(BatchStockRequest request) {
-        log.info("Batch reducing stock for {} items", request.getItems().size());
+        log.info("Batch reducing stock for {} items (key: {})", 
+                request.getItems().size(), request.getIdempotencyKey());
 
-        // 1. Load all products at once
+        // 1. Check idempotency
+        if (request.getIdempotencyKey() != null && 
+            idempotencyRepository.existsByIdempotencyKeyAndOperationType(request.getIdempotencyKey(), "REDUCE")) {
+            log.info("Stock already reduced for key: {}. Skipping.", request.getIdempotencyKey());
+            List<Long> ids = request.getItems().stream().map(StockItem::getProductId).toList();
+            return productRepository.findAllById(ids).stream().map(this::mapToResponse).toList();
+        }
+
+        // 2. Load all products at once
         List<Long> productIds = request.getItems().stream()
                 .map(StockItem::getProductId)
                 .collect(Collectors.toList());
@@ -189,7 +201,7 @@ public class ProductService {
         Map<Long, Product> productMap = products.stream()
                 .collect(Collectors.toMap(Product::getId, p -> p));
 
-        // 2. Validate ALL items before making any changes
+        // 3. Validate ALL items before making any changes
         for (StockItem item : request.getItems()) {
             Product product = productMap.get(item.getProductId());
             if (product == null) {
@@ -202,7 +214,7 @@ public class ProductService {
             }
         }
 
-        // 3. All validations passed — reduce stock for all items
+        // 4. All validations passed — reduce stock for all items
         List<ProductResponse> results = new ArrayList<>();
         for (StockItem item : request.getItems()) {
             Product product = productMap.get(item.getProductId());
@@ -211,6 +223,14 @@ public class ProductService {
             log.info("Batch: stock reduced for product {} by {} units (remaining: {})",
                     product.getName(), item.getQuantity(), updated.getQuantity());
             results.add(mapToResponse(updated));
+        }
+
+        // 5. Record idempotency
+        if (request.getIdempotencyKey() != null) {
+            idempotencyRepository.save(IdempotencyRecord.builder()
+                    .idempotencyKey(request.getIdempotencyKey())
+                    .operationType("REDUCE")
+                    .build());
         }
 
         return results;
@@ -222,7 +242,16 @@ public class ProductService {
      */
     @Transactional
     public List<ProductResponse> batchRestoreStock(BatchStockRequest request) {
-        log.info("Batch restoring stock for {} items", request.getItems().size());
+        log.info("Batch restoring stock for {} items (key: {})", 
+                request.getItems().size(), request.getIdempotencyKey());
+
+        // 1. Check idempotency
+        if (request.getIdempotencyKey() != null && 
+            idempotencyRepository.existsByIdempotencyKeyAndOperationType(request.getIdempotencyKey(), "RESTORE")) {
+            log.info("Stock already restored for key: {}. Skipping.", request.getIdempotencyKey());
+            List<Long> ids = request.getItems().stream().map(StockItem::getProductId).toList();
+            return productRepository.findAllById(ids).stream().map(this::mapToResponse).toList();
+        }
 
         List<ProductResponse> results = new ArrayList<>();
         for (StockItem item : request.getItems()) {
@@ -232,6 +261,14 @@ public class ProductService {
             log.info("Batch: stock restored for product {} by {} units (new total: {})",
                     product.getName(), item.getQuantity(), updated.getQuantity());
             results.add(mapToResponse(updated));
+        }
+
+        // 2. Record idempotency
+        if (request.getIdempotencyKey() != null) {
+            idempotencyRepository.save(IdempotencyRecord.builder()
+                    .idempotencyKey(request.getIdempotencyKey())
+                    .operationType("RESTORE")
+                    .build());
         }
 
         return results;
