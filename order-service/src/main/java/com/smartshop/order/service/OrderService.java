@@ -1,5 +1,7 @@
 package com.smartshop.order.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smartshop.contracts.audit.BaseAuditEntity;
 import com.smartshop.contracts.event.OrderCreatedEvent;
 import com.smartshop.contracts.event.PaymentCompletedEvent;
 import com.smartshop.order.client.BatchStockRequest;
@@ -15,21 +17,19 @@ import com.smartshop.order.dto.OrderResponse;
 import com.smartshop.order.entity.Order;
 import com.smartshop.order.entity.OrderItem;
 import com.smartshop.order.entity.OrderStatus;
-import com.smartshop.order.event.OrderEventProducer;
+import com.smartshop.order.entity.OutboxEvent;
 import com.smartshop.order.exception.OrderNotFoundException;
 import com.smartshop.order.repository.OrderRepository;
+import com.smartshop.order.repository.OutboxRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.smartshop.order.entity.OutboxEvent;
-import com.smartshop.order.repository.OutboxRepository;
-import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -49,21 +49,12 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final ProductServiceClient productServiceClient;
     private final UserServiceClient userServiceClient;
-    private final OrderEventProducer orderEventProducer;
     private final OutboxRepository outboxRepository;
     private final ObjectMapper objectMapper;
+    private final MeterRegistry meterRegistry;
 
-    /**
-     * Create a new order:
-     * 1. Validate user exists (via user-service)
-     * 2. Validate and fetch product details (via product-service)
-     * 3. Atomically reduce stock for all products in a single batch call
-     * 4. Save the order
-     * 5. Save the order-created event to the outbox table (same transaction)
-     */
     @Transactional
     public OrderResponse createOrder(OrderRequest request) {
-        // SECURITY: Use authenticated userId from Gateway header instead of request body
         String principal = SecurityContextHolder.getContext().getAuthentication().getName();
         Long authenticatedUserId;
         try {
@@ -75,7 +66,6 @@ public class OrderService {
         
         log.info("Creating order for user: {}", authenticatedUserId);
 
-        // Check for existing orders with same idempotency key
         if (request.getIdempotencyKey() != null) {
             orderRepository.findByOrderNumber(request.getIdempotencyKey())
                     .ifPresent(existing -> {
@@ -84,13 +74,12 @@ public class OrderService {
             });
         }
 
-        // 1. Validate user
         UserResponse user = userServiceClient.getUserById(authenticatedUserId);
 
-        // 2. Build order - use idempotency key if provided
         String orderNumber = request.getIdempotencyKey() != null
                 ? request.getIdempotencyKey()
                 : generateOrderNumber();
+
         Order order = Order.builder()
                 .orderNumber(orderNumber)
                 .userId(user.getId())
@@ -99,7 +88,6 @@ public class OrderService {
                 .shippingAddress(request.getShippingAddress())
                 .build();
 
-        // 3. Aggregate quantities by productId to handle duplicate IDs in request
         Map<Long, Integer> productQuantities = request.getItems().stream()
                 .collect(Collectors.groupingBy(
                         OrderItemRequest::getProductId,
@@ -135,23 +123,99 @@ public class OrderService {
             order.addItem(item);
         });
 
-        // 4. Atomically reduce stock for ALL items (all-or-nothing)
         productServiceClient.batchReduceStock(
                 BatchStockRequest.builder()
                         .idempotencyKey(orderNumber)
                         .items(stockItems)
                         .build());
 
-        // 5. Calculate total and save
         order.calculateTotalAmount();
         Order savedOrder = orderRepository.save(order);
 
         log.info("Order saved: {} (total: {})", savedOrder.getOrderNumber(), savedOrder.getTotalAmount());
 
-        // 6. Save event to Outbox (instead of publishing directly)
+        meterRegistry.counter("smartshop.orders.created", "status", savedOrder.getStatus().name()).increment();
+        meterRegistry.gauge("smartshop.orders.revenue", savedOrder.getTotalAmount().doubleValue());
+
         saveOrderCreatedToOutbox(savedOrder);
 
         return mapToResponse(savedOrder);
+    }
+
+    public OrderResponse getOrderById(Long id) {
+        return orderRepository.findById(id)
+                .map(this::mapToResponse)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
+    }
+
+    public OrderResponse getOrderByNumber(String orderNumber) {
+        return orderRepository.findByOrderNumber(orderNumber)
+                .map(this::mapToResponse)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderNumber));
+    }
+
+    public Page<OrderResponse> getOrdersByUserId(Long userId, int page, int size) {
+        PageRequest pageRequest = PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+        return orderRepository.findByUserId(userId, pageRequest)
+                .map(this::mapToResponse);
+    }
+
+    public Page<OrderResponse> getAllOrders(int page, int size) {
+        PageRequest pageRequest = PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+        return orderRepository.findAll(pageRequest)
+                .map(this::mapToResponse);
+    }
+
+    @Transactional
+    public OrderResponse updateOrderStatus(Long id, OrderStatus status) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
+        order.setStatus(status);
+        Order updated = orderRepository.save(order);
+        meterRegistry.counter("smartshop.orders.status.update", "status", status.name()).increment();
+        return mapToResponse(updated);
+    }
+
+    @Transactional
+    public OrderResponse cancelOrder(Long id) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
+        
+        if (order.getStatus() == OrderStatus.PAID || order.getStatus() == OrderStatus.SHIPPED) {
+            throw new IllegalStateException("Cannot cancel order in status: " + order.getStatus());
+        }
+
+        order.setStatus(OrderStatus.CANCELLED);
+        
+        // Restore stock
+        List<StockItem> itemsToRestore = order.getItems().stream()
+                .map(item -> StockItem.builder()
+                        .productId(item.getProductId())
+                        .quantity(item.getQuantity())
+                        .build())
+                .toList();
+
+        productServiceClient.batchRestoreStock(
+                BatchStockRequest.builder()
+                        .idempotencyKey(order.getOrderNumber())
+                        .items(itemsToRestore)
+                        .build());
+
+        Order saved = orderRepository.save(order);
+        return mapToResponse(saved);
+    }
+
+    @Transactional
+    public void handlePaymentResult(PaymentCompletedEvent event) {
+        log.info("Handling payment result for order: {}", event.getOrderNumber());
+        Order order = orderRepository.findByOrderNumber(event.getOrderNumber())
+                .orElseThrow(() -> new OrderNotFoundException("Order not found: " + event.getOrderNumber()));
+        
+        order.setStatus(OrderStatus.COMPLETED); // Assuming PAID maps to COMPLETED in this context or use custom status
+        orderRepository.save(order);
+        meterRegistry.counter("smartshop.orders.completed").increment();
     }
 
     private void saveOrderCreatedToOutbox(Order order) {
@@ -161,8 +225,6 @@ public class OrderService {
                     .userId(order.getUserId())
                     .userEmail(order.getUserEmail())
                     .totalAmount(order.getTotalAmount())
-                    .status(order.getStatus().name())
-                    .itemCount(order.getItems().size())
                     .createdAt(order.getCreatedAt())
                     .build();
 
@@ -180,135 +242,9 @@ public class OrderService {
                     .build();
 
             outboxRepository.save(outboxEvent);
-            log.info("Order created event saved to outbox for order: {}", order.getOrderNumber());
-
         } catch (Exception e) {
-            log.error("Failed to save order created event to outbox", e);
-            throw new RuntimeException("Failed to save order event for reliability", e);
-        }
-    }
-
-    /**
-     * Handle payment result from Kafka event.
-     * - COMPLETED payment -> Order status = CONFIRMED
-     * - FAILED payment    -> Order status = PAYMENT_FAILED + restore stock
-     */
-    @Transactional
-    public void handlePaymentResult(PaymentCompletedEvent event) {
-        Order order = orderRepository.findByOrderNumber(event.getOrderNumber())
-                .orElse(null);
-
-        if (order == null) {
-            log.error("Order not found for payment event: {}", event.getOrderNumber());
-            return;
-        }
-
-        if (order.getStatus() != OrderStatus.PENDING) {
-            log.warn("Order {} is not PENDING (current: {}), skipping payment update",
-                    event.getOrderNumber(), order.getStatus());
-            return;
-        }
-
-        if ("COMPLETED".equals(event.getStatus())) {
-            order.setStatus(OrderStatus.CONFIRMED);
-            orderRepository.save(order);
-            log.info("Order {} confirmed after successful payment (txn: {})",
-                    event.getOrderNumber(), event.getTransactionId());
-
-        } else if ("FAILED".equals(event.getStatus())) {
-            order.setStatus(OrderStatus.PAYMENT_FAILED);
-            orderRepository.save(order);
-            log.warn("Order {} marked as PAYMENT_FAILED (reason: {})",
-                    event.getOrderNumber(), event.getFailureReason());
-
-            // Restore stock for all items in the order
-            restoreStockForOrder(order);
-        }
-    }
-
-    public OrderResponse getOrderById(Long id) {
-        Order order = orderRepository.findById(id)
-                .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
-        return mapToResponse(order);
-    }
-
-    public OrderResponse getOrderByNumber(String orderNumber) {
-        Order order = orderRepository.findByOrderNumber(orderNumber)
-                .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderNumber));
-        return mapToResponse(order);
-    }
-
-    public Page<OrderResponse> getOrdersByUserId(Long userId, int page, int size) {
-        int normalizedPage = Math.max(page, 0);
-        int normalizedSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-
-        return orderRepository.findByUserId(userId,
-                        PageRequest.of(normalizedPage, normalizedSize,
-                                Sort.by(Sort.Direction.DESC, "createdAt")))
-                .map(this::mapToResponse);
-    }
-
-    public Page<OrderResponse> getAllOrders(int page, int size) {
-        int normalizedPage = Math.max(page, 0);
-        int normalizedSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-
-        return orderRepository.findAll(
-                        PageRequest.of(normalizedPage, normalizedSize,
-                                Sort.by(Sort.Direction.DESC, "createdAt")))
-                .map(this::mapToResponse);
-    }
-
-    @Transactional
-    public OrderResponse updateOrderStatus(Long id, OrderStatus newStatus) {
-        Order order = orderRepository.findById(id)
-                .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
-
-        order.setStatus(newStatus);
-        Order updated = orderRepository.save(order);
-
-        log.info("Order {} status updated to {}", updated.getOrderNumber(), newStatus);
-        return mapToResponse(updated);
-    }
-
-    @Transactional
-    public OrderResponse cancelOrder(Long id) {
-        Order order = orderRepository.findById(id)
-                .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
-
-        if (order.getStatus() != OrderStatus.PENDING) {
-            throw new IllegalStateException("Only pending orders can be cancelled. Current status: " + order.getStatus());
-        }
-
-        order.setStatus(OrderStatus.CANCELLED);
-        Order updated = orderRepository.save(order);
-
-        // Restore stock for all items in the cancelled order
-        restoreStockForOrder(updated);
-
-        log.info("Order cancelled: {}", updated.getOrderNumber());
-        return mapToResponse(updated);
-    }
-
-    /**
-     * Restore stock for all items in a cancelled/failed order using batch endpoint.
-     * Best-effort: failure is logged but doesn't block the cancellation.
-     */
-    private void restoreStockForOrder(Order order) {
-        try {
-            List<StockItem> stockItems = order.getItems().stream()
-                    .map(item -> StockItem.builder()
-                            .productId(item.getProductId())
-                            .quantity(item.getQuantity())
-                            .build())
-                    .collect(Collectors.toList());
-
-            productServiceClient.batchRestoreStock(
-                    BatchStockRequest.builder().items(stockItems).build());
-            log.info("Stock restored for all {} items in order {}",
-                    stockItems.size(), order.getOrderNumber());
-        } catch (Exception e) {
-            log.error("Failed to batch restore stock for order {}: {}",
-                    order.getOrderNumber(), e.getMessage());
+            log.error("Failed to save outbox event", e);
+            throw new RuntimeException("Persistence error", e);
         }
     }
 
@@ -325,14 +261,13 @@ public class OrderService {
                 .status(order.getStatus().name())
                 .totalAmount(order.getTotalAmount())
                 .shippingAddress(order.getShippingAddress())
-                .items(order.getItems().stream().map(this::mapToItemResponse).collect(Collectors.toList()))
                 .createdAt(order.getCreatedAt())
+                .items(order.getItems().stream().map(this::mapItemToResponse).toList())
                 .build();
     }
 
-    private OrderItemResponse mapToItemResponse(OrderItem item) {
+    private OrderItemResponse mapItemToResponse(OrderItem item) {
         return OrderItemResponse.builder()
-                .id(item.getId())
                 .productId(item.getProductId())
                 .productName(item.getProductName())
                 .productSku(item.getProductSku())

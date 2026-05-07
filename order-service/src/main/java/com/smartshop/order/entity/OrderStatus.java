@@ -9,8 +9,10 @@ package com.smartshop.order.entity;
 public enum OrderStatus {
     PENDING,
     CONFIRMED,
-    PAYMENT_FAILED,
+    PAID,
     SHIPPED,
     DELIVERED,
-    CANCELLED
+    CANCELLED,
+    PAYMENT_FAILED,
+    COMPLETED
 }
