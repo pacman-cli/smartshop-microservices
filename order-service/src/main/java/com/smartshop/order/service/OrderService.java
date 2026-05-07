@@ -26,6 +26,12 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smartshop.order.entity.OutboxEvent;
+import com.smartshop.order.repository.OutboxRepository;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +50,8 @@ public class OrderService {
     private final ProductServiceClient productServiceClient;
     private final UserServiceClient userServiceClient;
     private final OrderEventProducer orderEventProducer;
+    private final OutboxRepository outboxRepository;
+    private final ObjectMapper objectMapper;
 
     /**
      * Create a new order:
@@ -51,11 +59,21 @@ public class OrderService {
      * 2. Validate and fetch product details (via product-service)
      * 3. Atomically reduce stock for all products in a single batch call
      * 4. Save the order
-     * 5. Publish order-created event to Kafka
+     * 5. Save the order-created event to the outbox table (same transaction)
      */
     @Transactional
     public OrderResponse createOrder(OrderRequest request) {
-        log.info("Creating order for user: {}", request.getUserId());
+        // SECURITY: Use authenticated userId from Gateway header instead of request body
+        String principal = SecurityContextHolder.getContext().getAuthentication().getName();
+        Long authenticatedUserId;
+        try {
+            authenticatedUserId = Long.parseLong(principal);
+        } catch (NumberFormatException e) {
+            log.error("Invalid user ID in security context: {}", principal);
+            throw new RuntimeException("Authentication error: missing or invalid user ID");
+        }
+        
+        log.info("Creating order for user: {}", authenticatedUserId);
 
         // Check for existing orders with same idempotency key
         if (request.getIdempotencyKey() != null) {
@@ -67,7 +85,7 @@ public class OrderService {
         }
 
         // 1. Validate user
-        UserResponse user = userServiceClient.getUserById(request.getUserId());
+        UserResponse user = userServiceClient.getUserById(authenticatedUserId);
 
         // 2. Build order - use idempotency key if provided
         String orderNumber = request.getIdempotencyKey() != null
@@ -81,61 +99,93 @@ public class OrderService {
                 .shippingAddress(request.getShippingAddress())
                 .build();
 
-        // 3. Fetch product details in batch and build order items + stock reduction list
-        List<Long> productIds = request.getItems().stream()
-                .map(OrderItemRequest::getProductId)
-                .toList();
+        // 3. Aggregate quantities by productId to handle duplicate IDs in request
+        Map<Long, Integer> productQuantities = request.getItems().stream()
+                .collect(Collectors.groupingBy(
+                        OrderItemRequest::getProductId,
+                        Collectors.summingInt(OrderItemRequest::getQuantity)
+                ));
+
+        List<Long> productIds = productQuantities.keySet().stream().toList();
         Map<Long, ProductResponse> productMap = productServiceClient.getProductsByIds(productIds)
                 .stream()
                 .collect(Collectors.toMap(ProductResponse::getId, p -> p));
 
         List<StockItem> stockItems = new ArrayList<>();
-        for (OrderItemRequest itemRequest : request.getItems()) {
-            ProductResponse product = productMap.get(itemRequest.getProductId());
+        
+        productQuantities.forEach((productId, quantity) -> {
+            ProductResponse product = productMap.get(productId);
+            if (product == null) {
+                throw new RuntimeException("Product not found: " + productId);
+            }
 
             stockItems.add(StockItem.builder()
                     .productId(product.getId())
-                    .quantity(itemRequest.getQuantity())
+                    .quantity(quantity)
                     .build());
 
             OrderItem item = OrderItem.builder()
                     .productId(product.getId())
                     .productName(product.getName())
                     .productSku(product.getSku())
-                    .quantity(itemRequest.getQuantity())
+                    .quantity(quantity)
                     .price(product.getPrice())
                     .build();
 
             order.addItem(item);
-        }
+        });
 
         // 4. Atomically reduce stock for ALL items (all-or-nothing)
         productServiceClient.batchReduceStock(
-                BatchStockRequest.builder().items(stockItems).build());
+                BatchStockRequest.builder()
+                        .idempotencyKey(orderNumber)
+                        .items(stockItems)
+                        .build());
 
         // 5. Calculate total and save
         order.calculateTotalAmount();
         Order savedOrder = orderRepository.save(order);
 
-        log.info("Order created: {} (total: {})", savedOrder.getOrderNumber(), savedOrder.getTotalAmount());
+        log.info("Order saved: {} (total: {})", savedOrder.getOrderNumber(), savedOrder.getTotalAmount());
 
-        // 6. Publish event (async, non-blocking)
-        try {
-            orderEventProducer.publishOrderCreated(OrderCreatedEvent.builder()
-                    .orderNumber(savedOrder.getOrderNumber())
-                    .userId(savedOrder.getUserId())
-                    .userEmail(savedOrder.getUserEmail())
-                    .totalAmount(savedOrder.getTotalAmount())
-                    .status(savedOrder.getStatus().name())
-                    .itemCount(savedOrder.getItems().size())
-                    .createdAt(savedOrder.getCreatedAt())
-                    .build());
-        } catch (Exception e) {
-            log.warn("Failed to publish order created event for order: {}", savedOrder.getOrderNumber(), e);
-            // Don't fail the order creation if Kafka is down
-        }
+        // 6. Save event to Outbox (instead of publishing directly)
+        saveOrderCreatedToOutbox(savedOrder);
 
         return mapToResponse(savedOrder);
+    }
+
+    private void saveOrderCreatedToOutbox(Order order) {
+        try {
+            OrderCreatedEvent event = OrderCreatedEvent.builder()
+                    .orderNumber(order.getOrderNumber())
+                    .userId(order.getUserId())
+                    .userEmail(order.getUserEmail())
+                    .totalAmount(order.getTotalAmount())
+                    .status(order.getStatus().name())
+                    .itemCount(order.getItems().size())
+                    .createdAt(order.getCreatedAt())
+                    .build();
+
+            String payload = objectMapper.writeValueAsString(event);
+
+            OutboxEvent outboxEvent = OutboxEvent.builder()
+                    .id(UUID.randomUUID())
+                    .aggregateId(order.getOrderNumber())
+                    .aggregateType("ORDER")
+                    .eventType("ORDER_CREATED")
+                    .payload(payload)
+                    .status("PENDING")
+                    .retryCount(0)
+                    .createdAt(LocalDateTime.now())
+                    .build();
+
+            outboxRepository.save(outboxEvent);
+            log.info("Order created event saved to outbox for order: {}", order.getOrderNumber());
+
+        } catch (Exception e) {
+            log.error("Failed to save order created event to outbox", e);
+            throw new RuntimeException("Failed to save order event for reliability", e);
+        }
     }
 
     /**
