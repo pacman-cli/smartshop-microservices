@@ -12,5 +12,6 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class BatchStockRequest {
+    private String idempotencyKey;
     private List<StockItem> items;
 }

@@ -68,6 +68,9 @@ resilience4j:
         wait-duration-in-open-state: 10s
         permitted-number-of-calls-in-half-open-state: 3
         sliding-window-type: COUNT_BASED
+        ignore-exceptions:
+          - feign.FeignException.NotFound
+          - feign.FeignException.BadRequest
       userService:
         register-health-indicator: true
         sliding-window-size: 10
@@ -76,6 +79,9 @@ resilience4j:
         wait-duration-in-open-state: 10s
         permitted-number-of-calls-in-half-open-state: 3
         sliding-window-type: COUNT_BASED
+        ignore-exceptions:
+          - feign.FeignException.NotFound
+          - feign.FeignException.BadRequest
   timelimiter:
     instances:
       productService:
