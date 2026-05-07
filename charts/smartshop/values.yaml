@@ -1,0 +1,36 @@
+# Global values
+global:
+  image:
+    repository: smartshop
+    pullPolicy: Never
+    tag: "latest"
+  database:
+    user: postgres
+    password: cG9zdGdyZXM=
+
+# Service specific values
+services:
+  discoveryServer:
+    enabled: true
+    port: 8761
+  configServer:
+    enabled: true
+    port: 8888
+  apiGateway:
+    enabled: true
+    port: 8080
+  userService:
+    enabled: true
+    port: 8081
+  productService:
+    enabled: true
+    port: 8082
+  orderService:
+    enabled: true
+    port: 8083
+  paymentService:
+    enabled: true
+    port: 8084
+  notificationService:
+    enabled: true
+    port: 8085
