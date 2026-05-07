@@ -46,7 +46,8 @@ import lombok.ToString;
 @Table(
     name = "users",
     indexes = {
-        @Index(name = "idx_users_created_at", columnList = "created_at")
+        @Index(name = "idx_users_created_at", columnList = "created_at"),
+        @Index(name = "idx_users_role", columnList = "role")
     })
 @Getter
 @Setter
