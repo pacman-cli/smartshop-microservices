@@ -42,6 +42,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // Health/actuator endpoints are public
                         .requestMatchers("/actuator/**").permitAll()
+                        .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                         // GET on products is public (browsing catalog)
                         .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
                         // Stock endpoints require authentication (service-to-service via Feign)

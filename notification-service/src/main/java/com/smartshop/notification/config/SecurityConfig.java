@@ -1,39 +1,32 @@
-package com.smartshop.user.config;
+package com.smartshop.notification.config;
 
-import com.smartshop.user.security.JwtAuthFilter;
-import lombok.RequiredArgsConstructor;
+import com.smartshop.contracts.security.GatewayHeaderAuthFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * Security Configuration — configures Spring Security for stateless JWT authentication.
+ * Security configuration for notification-service.
  *
- * Key decisions:
- * - CSRF disabled (stateless API, no cookies)
- * - Session management: STATELESS (no server-side sessions)
- * - JWT filter runs before UsernamePasswordAuthenticationFilter
- * - Public endpoints: auth, health, GET on user profiles
- * - All other endpoints require a valid JWT token
+ * The API Gateway validates JWT tokens and forwards user info
+ * via X-User-Email and X-User-Role headers. This config reads
+ * those headers for internal service auth.
+ *
+ * Notification-service only consumes Kafka events - no direct REST endpoints
+ * except actuator for health checks.
  */
 @Configuration
 @EnableMethodSecurity
-@RequiredArgsConstructor
 public class SecurityConfig {
 
-    private final JwtAuthFilter jwtAuthFilter;
-
     @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+    public GatewayHeaderAuthFilter gatewayHeaderAuthFilter() {
+        return new GatewayHeaderAuthFilter();
     }
 
     @Bean
@@ -45,12 +38,12 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // Health/actuator endpoints are public
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
-                        .requestMatchers("/api/auth/**").permitAll()
-                        // All other endpoints require a valid JWT token (or gateway header)
+                        // Kafka consumers don't need auth - handled internally
                         .anyRequest().authenticated())
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(gatewayHeaderAuthFilter(), UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 }
