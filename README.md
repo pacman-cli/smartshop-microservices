@@ -180,6 +180,39 @@ curl http://localhost:8080/api/products \
 - **Circuit Breaker** — Resilience4j on order-service. Prevent cascading failures
 - **Caching** — Caffeine local cache on user-service. Fast lookups
 
+## Swagger / OpenAPI Documentation
+
+Each service exposes Swagger UI for API exploration:
+
+| Service | Swagger URL |
+|---------|-------------|
+| User Service | http://localhost:8081/swagger-ui.html |
+| Product Service | http://localhost:8082/swagger-ui.html |
+| Order Service | http://localhost:8083/swagger-ui.html |
+| Payment Service | http://localhost:8084/swagger-ui.html |
+| Notification Service | http://localhost:8085/swagger-ui.html |
+
+## Observability
+
+### Prometheus Metrics
+Access Prometheus: http://localhost:9090
+
+Custom metrics exposed:
+- `smartshop.users.registered` — User registrations
+- `smartshop.users.logins` — Successful logins
+- `smartshop.auth.failures` — Authentication failures
+- `smartshop.orders.created` — Orders created
+- `smartshop.orders.failed` — Failed order attempts
+- `smartshop.payments.processed` — Payments processed
+- `smartshop.payments.failed` — Failed payments
+- `smartshop.payments.refunded` — Refunds issued
+
+### Grafana Dashboards
+Access Grafana: http://localhost:3000 (admin/admin)
+
+### Zipkin Distributed Tracing
+Access Zipkin: http://localhost:9411
+
 ## Docker Infrastructure
 
 | Container | Image | Port |
@@ -224,4 +257,4 @@ smartshop-microservices/
 
 ## Tutorial Progress
 
-See [TUTORIAL_STEPS.md](TUTORIAL_STEPS.md). 37-step plan. Progress: 33/37.
+See [TUTORIAL_STEPS.md](TUTORIAL_STEPS.md). 37-step plan. Progress: 37/37. ✅ ALL COMPLETE!
