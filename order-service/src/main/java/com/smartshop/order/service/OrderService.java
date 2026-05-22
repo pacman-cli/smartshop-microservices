@@ -155,6 +155,16 @@ public class OrderService {
     }
 
     public Page<OrderResponse> getOrdersByUserId(Long userId, int page, int size) {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required");
+        }
+        String principal = auth.getName();
+        String role = auth.getAuthorities().stream()
+                .findFirst().map(Object::toString).orElse("");
+        if (!String.valueOf(userId).equals(principal) && !role.equals("ROLE_ADMIN")) {
+            throw new org.springframework.security.access.AccessDeniedException("Cannot view other users' orders");
+        }
         PageRequest pageRequest = PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE),
                 Sort.by(Sort.Direction.DESC, "createdAt"));
         return orderRepository.findByUserId(userId, pageRequest)
@@ -170,6 +180,15 @@ public class OrderService {
 
     @Transactional
     public OrderResponse updateOrderStatus(Long id, OrderStatus status) {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required");
+        }
+        String role = auth.getAuthorities().stream()
+                .findFirst().map(Object::toString).orElse("");
+        if (!role.equals("ROLE_ADMIN")) {
+            throw new org.springframework.security.access.AccessDeniedException("Only admins can update order status");
+        }
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
         order.setStatus(status);
@@ -182,7 +201,15 @@ public class OrderService {
     public OrderResponse cancelOrder(Long id) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
-        
+        // Verify ownership
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required");
+        }
+        String principal = auth.getName();
+        if (!String.valueOf(order.getUserId()).equals(principal)) {
+            throw new org.springframework.security.access.AccessDeniedException("Cannot cancel another user's order");
+        }
         if (order.getStatus() == OrderStatus.PAID || order.getStatus() == OrderStatus.SHIPPED) {
             throw new IllegalStateException("Cannot cancel order in status: " + order.getStatus());
         }
@@ -209,13 +236,18 @@ public class OrderService {
 
     @Transactional
     public void handlePaymentResult(PaymentCompletedEvent event) {
-        log.info("Handling payment result for order: {}", event.getOrderNumber());
+        log.info("Handling payment result for order: {} status: {}", event.getOrderNumber(), event.getStatus());
         Order order = orderRepository.findByOrderNumber(event.getOrderNumber())
                 .orElseThrow(() -> new OrderNotFoundException("Order not found: " + event.getOrderNumber()));
-        
-        order.setStatus(OrderStatus.COMPLETED); // Assuming PAID maps to COMPLETED in this context or use custom status
+
+        if ("COMPLETED".equals(event.getStatus())) {
+            order.setStatus(OrderStatus.PAID);
+            meterRegistry.counter("smartshop.orders.payment", "result", "success").increment();
+        } else {
+            order.setStatus(OrderStatus.PAYMENT_FAILED);
+            meterRegistry.counter("smartshop.orders.payment", "result", "failed").increment();
+        }
         orderRepository.save(order);
-        meterRegistry.counter("smartshop.orders.completed").increment();
     }
 
     private void saveOrderCreatedToOutbox(Order order) {
