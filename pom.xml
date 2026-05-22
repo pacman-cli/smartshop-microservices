@@ -148,6 +148,18 @@
             <artifactId>zipkin-reporter-brave</artifactId>
         </dependency>
 
+        <!-- Prometheus Metrics Registry — exposes /actuator/prometheus -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- SpringDoc OpenAPI — Swagger UI for REST services -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        </dependency>
+
         <!-- Structured JSON Logging -->
         <dependency>
             <groupId>net.logstash.logback</groupId>
