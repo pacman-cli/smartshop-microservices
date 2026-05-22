@@ -15,4 +15,7 @@ scrape_configs:
         - 'product-service:8082'
         - 'order-service:8083'
         - 'payment-service:8084'
+        - 'notification-service:8085'
         - 'api-gateway:8080'
+        - 'discovery-server:8761'
+        - 'config-server:8888'
