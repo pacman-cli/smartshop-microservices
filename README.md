@@ -1,6 +1,6 @@
 # SmartShop Microservices Platform
 
-A production-ready e-commerce microservices platform built with Spring Boot 3, Spring Cloud, and Docker.
+Prod-ready e-commerce microservices platform. Built with Spring Boot 3, Spring Cloud, Docker.
 
 ## Architecture
 
@@ -41,12 +41,12 @@ Client → API Gateway (8080) → Service Discovery (Eureka)
 |---------|------|-------------|
 | **discovery-server** | 8761 | Eureka service registry |
 | **config-server** | 8888 | Centralized configuration |
-| **api-gateway** | 8080 | Request routing, JWT validation, CORS |
-| **user-service** | 8081 | Registration, login, JWT auth, user CRUD |
-| **product-service** | 8082 | Product catalog, stock management, search |
-| **order-service** | 8083 | Order creation with Feign calls + Kafka events |
-| **payment-service** | 8084 | Payment processing + Kafka events |
-| **notification-service** | 8085 | Kafka consumer, sends email notifications |
+| **api-gateway** | 8080 | Routing, JWT validation, CORS |
+| **user-service** | 8081 | Registration, login, auth, CRUD |
+| **product-service** | 8082 | Catalog, stock, search |
+| **order-service** | 8083 | Order creation. Feign + Kafka |
+| **payment-service** | 8084 | Payment processing + Kafka |
+| **notification-service** | 8085 | Kafka consumer, email notifications |
 
 ## Prerequisites
 
@@ -70,11 +70,11 @@ docker-compose up --build -d
 docker-compose logs -f
 ```
 
-Services will start in dependency order: postgres → zookeeper → kafka → discovery-server → config-server → all business services.
+Services start in order: postgres → zookeeper → kafka → discovery-server → config-server → business services.
 
 ### Option 2: Local Development
 
-1. Start PostgreSQL and create databases:
+1. Start PostgreSQL, create databases:
 ```sql
 CREATE DATABASE user_db;
 CREATE DATABASE product_db;
@@ -105,11 +105,11 @@ mvn spring-boot:run -pl notification-service
 
 ## API Endpoints
 
-All requests go through the API Gateway at `http://localhost:8080`.
+Requests go through API Gateway at `http://localhost:8080`.
 
 ### Auth (Public)
 ```
-POST /api/auth/register    - Register a new user
+POST /api/auth/register    - Register new user
 POST /api/auth/login       - Login, returns JWT token
 ```
 
@@ -152,7 +152,7 @@ GET  /api/payments              - List all payments
 
 ## Authentication
 
-Use JWT Bearer tokens. Register and login to get a token:
+Use JWT Bearer tokens. Register and login to get token:
 
 ```bash
 # Register
@@ -165,20 +165,53 @@ curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"john@test.com","password":"password123"}'
 
-# Use the token
+# Use token
 curl http://localhost:8080/api/products \
   -H "Authorization: Bearer <token>"
 ```
 
 ## Key Patterns
 
-- **Database per Service** — Each service owns its own PostgreSQL database
-- **API Gateway** — Single entry point with JWT validation and route forwarding
-- **Service Discovery** — Eureka for dynamic service registration/lookup
-- **Centralized Config** — Config Server serves YAML configs to all services
-- **Event-Driven** — Kafka topics `order.created` and `payment.completed` for async communication
-- **Circuit Breaker** — Resilience4j on order-service Feign clients to prevent cascading failures
-- **Caching** — Caffeine local cache on user-service for read-heavy lookups
+- **Database per Service** — Service owns PostgreSQL database
+- **API Gateway** — Entry point. JWT validation, route forwarding
+- **Service Discovery** — Eureka for dynamic registration/lookup
+- **Centralized Config** — Config Server serves YAML to services
+- **Event-Driven** — Kafka topics `order.created`, `payment.completed` for async comms
+- **Circuit Breaker** — Resilience4j on order-service. Prevent cascading failures
+- **Caching** — Caffeine local cache on user-service. Fast lookups
+
+## Swagger / OpenAPI Documentation
+
+Each service exposes Swagger UI for API exploration:
+
+| Service | Swagger URL |
+|---------|-------------|
+| User Service | http://localhost:8081/swagger-ui.html |
+| Product Service | http://localhost:8082/swagger-ui.html |
+| Order Service | http://localhost:8083/swagger-ui.html |
+| Payment Service | http://localhost:8084/swagger-ui.html |
+| Notification Service | http://localhost:8085/swagger-ui.html |
+
+## Observability
+
+### Prometheus Metrics
+Access Prometheus: http://localhost:9090
+
+Custom metrics exposed:
+- `smartshop.users.registered` — User registrations
+- `smartshop.users.logins` — Successful logins
+- `smartshop.auth.failures` — Authentication failures
+- `smartshop.orders.created` — Orders created
+- `smartshop.orders.failed` — Failed order attempts
+- `smartshop.payments.processed` — Payments processed
+- `smartshop.payments.failed` — Failed payments
+- `smartshop.payments.refunded` — Refunds issued
+
+### Grafana Dashboards
+Access Grafana: http://localhost:3000 (admin/admin)
+
+### Zipkin Distributed Tracing
+Access Zipkin: http://localhost:9411
 
 ## Docker Infrastructure
 
@@ -189,15 +222,15 @@ curl http://localhost:8080/api/products \
 | Kafka | confluentinc/cp-kafka:7.5.0 | 29092 |
 | MailHog | mailhog/mailhog | 1025 (SMTP), 8025 (Web UI) |
 
-MailHog web UI: http://localhost:8025 — view all emails sent by notification-service.
+MailHog UI: http://localhost:8025 — view notification-service emails.
 
 ## Build & Test
 
 ```bash
-# Compile all modules
+# Compile modules
 mvn clean compile
 
-# Run all tests
+# Run tests
 mvn test
 
 # Package JARs (skip tests)
@@ -209,19 +242,19 @@ mvn clean package -DskipTests
 ```
 smartshop-microservices/
 ├── pom.xml                    # Parent POM
-├── docker-compose.yml         # Full stack orchestration
-├── init-databases.sql         # PostgreSQL init script
+├── docker-compose.yml         # Orchestration
+├── init-databases.sql         # DB init
 ├── discovery-server/          # Eureka Server
-├── config-server/             # Spring Cloud Config
-│   └── src/main/resources/configurations/  # Service configs
-├── api-gateway/               # Spring Cloud Gateway + JWT filter
-├── user-service/              # User management + Auth
-├── product-service/           # Product catalog
-├── order-service/             # Order processing
-├── payment-service/           # Payment processing
-└── notification-service/      # Email notifications via Kafka
+├── config-server/             # Config Server
+│   └── src/main/resources/configurations/  # Configs
+├── api-gateway/               # Gateway + JWT
+├── user-service/              # User + Auth
+├── product-service/           # Catalog
+├── order-service/             # Orders
+├── payment-service/           # Payments
+└── notification-service/      # Notifications
 ```
 
 ## Tutorial Progress
 
-See [TUTORIAL_STEPS.md](TUTORIAL_STEPS.md) for the 37-step implementation plan and current progress (33/37 complete).
+See [TUTORIAL_STEPS.md](TUTORIAL_STEPS.md). 37-step plan. Progress: 37/37. ✅ ALL COMPLETE!

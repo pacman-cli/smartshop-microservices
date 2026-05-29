@@ -1,5 +1,6 @@
 package com.smartshop.order.entity;
 
+import com.smartshop.contracts.audit.BaseAuditEntity;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -17,11 +18,10 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.Where;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -34,14 +34,18 @@ import java.util.List;
     indexes = {
         @Index(name = "idx_orders_user_id", columnList = "user_id"),
         @Index(name = "idx_orders_status", columnList = "status"),
-        @Index(name = "idx_orders_order_number", columnList = "order_number", unique = true)
+        @Index(name = "idx_orders_order_number", columnList = "order_number", unique = true),
+        @Index(name = "idx_orders_created_at", columnList = "created_at"),
+        @Index(name = "idx_orders_deleted", columnList = "deleted")
     })
+@SQLDelete(sql = "UPDATE orders SET deleted = true WHERE id = ?")
+@Where(clause = "deleted = false")
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Order {
+public class Order extends BaseAuditEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -67,17 +71,13 @@ public class Order {
     @Column(length = 500)
     private String shippingAddress;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean deleted = false;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
     @Builder.Default
     private List<OrderItem> items = new ArrayList<>();
-
-    @CreationTimestamp
-    @Column(name = "created_at", updatable = false)
-    private LocalDateTime createdAt;
-
-    @UpdateTimestamp
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
 
     public void addItem(OrderItem item) {
         items.add(item);

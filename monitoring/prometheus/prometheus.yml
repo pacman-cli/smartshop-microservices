@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'smartshop-services'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets:
+        - 'user-service:8081'
+        - 'product-service:8082'
+        - 'order-service:8083'
+        - 'payment-service:8084'
+        - 'notification-service:8085'
+        - 'api-gateway:8080'
+        - 'discovery-server:8761'
+        - 'config-server:8888'

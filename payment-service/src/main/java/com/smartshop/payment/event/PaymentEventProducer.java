@@ -1,6 +1,7 @@
 package com.smartshop.payment.event;
 
 import com.smartshop.contracts.event.PaymentCompletedEvent;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -19,5 +20,11 @@ public class PaymentEventProducer {
         log.info("Publishing payment event for order: {} status: {}",
                 event.getOrderNumber(), event.getStatus());
         kafkaTemplate.send(PAYMENT_COMPLETED_TOPIC, event.getOrderNumber(), event);
+    }
+
+    @PreDestroy
+    public void flush() {
+        kafkaTemplate.flush();
+        log.info("Payment event producer flushed");
     }
 }

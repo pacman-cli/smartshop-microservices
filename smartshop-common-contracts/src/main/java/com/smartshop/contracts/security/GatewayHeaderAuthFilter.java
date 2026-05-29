@@ -34,19 +34,25 @@ public class GatewayHeaderAuthFilter extends OncePerRequestFilter {
 
         String userEmail = request.getHeader("X-User-Email");
         String userRole = request.getHeader("X-User-Role");
+        String userId = request.getHeader("X-User-Id");
 
         if (userEmail != null && !userEmail.isBlank() && userRole != null && !userRole.isBlank()) {
-            // Spring Security expects roles prefixed with "ROLE_"
-            String roleWithPrefix = userRole.startsWith("ROLE_") ? userRole : "ROLE_" + userRole;
+            if (userId == null || userId.isBlank()) {
+                log.warn("Gateway headers present but X-User-Id is missing. Skipping authentication.");
+            } else {
+                // Spring Security expects roles prefixed with "ROLE_"
+                String roleWithPrefix = userRole.startsWith("ROLE_") ? userRole : "ROLE_" + userRole;
 
-            UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(
-                            userEmail,
-                            null,
-                            List.of(new SimpleGrantedAuthority(roleWithPrefix)));
+                // Store UserID as principal for easier access in @AuthenticationPrincipal or SecurityContext
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(
+                                userId,
+                                null,
+                                List.of(new SimpleGrantedAuthority(roleWithPrefix)));
 
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-            log.debug("Gateway auth: user={} role={}", userEmail, userRole);
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+                log.debug("Gateway auth successful: id={} email={} role={}", userId, userEmail, userRole);
+            }
         }
 
         filterChain.doFilter(request, response);

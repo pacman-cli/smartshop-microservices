@@ -84,9 +84,24 @@ Config Server reads configuration from a Git repository or local files.
 - Rate Limiter: Controls request throughput
 
 ## Security (Spring Security + JWT)
-- user-service issues JWT tokens on login
-- API Gateway validates JWT tokens
-- Each service can verify tokens for protected endpoints
+- **Identity Provider**: `user-service` issues JWT on login.
+- **Verification**: `api-gateway` validates JWT and extracts user info.
+- **Propagation**: Gateway injects `X-User-Id`, `X-User-Email`, and `X-User-Role` headers.
+- **Internal Security**: Downstream services use `GatewayHeaderAuthFilter` to trust headers.
+
+## Reliability Patterns
+
+### Transactional Outbox
+Ensures reliable event delivery:
+1. `order-service` saves order + `OutboxEvent` in **single transaction**.
+2. Background worker polls `outbox` table and publishes to Kafka.
+3. Prevents data loss if Kafka is unavailable during order creation.
+
+### Idempotency
+Prevents duplicate stock operations from retries:
+1. `product-service` tracks `idempotency_key` for stock operations.
+2. If same key arrives, service returns cached result instead of repeating logic.
+3. `order-service` uses `order_number` as the key for stock batch calls.
 
 ## Database-per-Service Pattern
 | Service              | Database     | Port  |

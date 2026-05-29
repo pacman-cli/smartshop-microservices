@@ -148,12 +148,33 @@
             <artifactId>zipkin-reporter-brave</artifactId>
         </dependency>
 
+        <!-- Prometheus Metrics Registry — exposes /actuator/prometheus -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- SpringDoc OpenAPI — Swagger UI for REST services -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        </dependency>
+
         <!-- Structured JSON Logging -->
         <dependency>
             <groupId>net.logstash.logback</groupId>
             <artifactId>logstash-logback-encoder</artifactId>
         </dependency>
     </dependencies>
+
+    <!-- ===== GitHub Packages Maven Repository ===== -->
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/pacman-cli/smartshop-microservices</url>
+        </repository>
+    </distributionManagement>
 
     <!-- ===== Build Configuration ===== -->
     <build>

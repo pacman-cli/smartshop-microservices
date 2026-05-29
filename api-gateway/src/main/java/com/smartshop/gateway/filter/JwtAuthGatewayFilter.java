@@ -37,14 +37,12 @@ public class JwtAuthGatewayFilter implements GlobalFilter, Ordered {
     private static final List<String> PUBLIC_PATHS = List.of(
             "/api/auth/",
             "/actuator/",
-            "/eureka",
-            "/api/products"  // Product browsing is public
+            "/eureka"
     );
 
     /** Paths where GET is allowed without auth but other methods require auth */
     private static final List<String> PUBLIC_GET_PATHS = List.of(
-            "/api/products",
-            "/api/users"
+            "/api/products"
     );
 
     public JwtAuthGatewayFilter(@Value("${jwt.secret:${JWT_SECRET:smartshop-secret-key-for-jwt-token-generation-min-256-bits-long-key}}") String secret) {

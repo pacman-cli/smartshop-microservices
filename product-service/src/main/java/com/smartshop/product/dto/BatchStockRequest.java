@@ -19,6 +19,8 @@ import java.util.List;
 @AllArgsConstructor
 public class BatchStockRequest {
 
+    private String idempotencyKey;
+
     @NotEmpty(message = "At least one stock item is required")
     @Valid
     private List<StockItem> items;

@@ -1,0 +1,74 @@
+{
+  "name": "SmartShop Microservices",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/common-utils:2": {}
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "vscjava.vscode-spring-boot-dashboard",
+        "vscjava.vscode-spring-initializr",
+        "vmware.vscode-spring-boot",
+        "pivotal.vscode-boot-dev-pack",
+        "ms-azuretools.vscode-docker",
+        "eamodio.gitlens",
+        "EditorConfig.EditorConfig",
+        "redhat.vscode-xml",
+        "redhat.vscode-yaml",
+        "mtxr.sqltools",
+        "mtxr.sqltools-driver-pg",
+        "mtxr.sqltools-driver-redis"
+      ],
+      "settings": {
+        "java.configuration.updateBuildConfiguration": "automatic",
+        "java.jdt.ls.java.home": "/usr/lib/jvm/java-17-openjdk-amd64",
+        "maven.executable.path": "/usr/local/bin/mvn",
+        "xml.java.home": "/usr/lib/jvm/java-17-openjdk-amd64"
+      }
+    }
+  },
+
+  "forwardPorts": [
+    8080, 8761, 8888,
+    8081, 8082, 8083, 8084, 8085,
+    3000,
+    5432, 6379,
+    29092, 9090, 9411, 3001, 8025
+  ],
+
+  "portsAttributes": {
+    "8080": { "label": "API Gateway" },
+    "8761": { "label": "Discovery Server" },
+    "8888": { "label": "Config Server" },
+    "8081": { "label": "User Service" },
+    "8082": { "label": "Product Service" },
+    "8083": { "label": "Order Service" },
+    "8084": { "label": "Payment Service" },
+    "8085": { "label": "Notification Service" },
+    "3000": { "label": "Frontend" },
+    "5432": { "label": "PostgreSQL" },
+    "6379": { "label": "Redis" },
+    "29092": { "label": "Kafka" },
+    "9090": { "label": "Prometheus" },
+    "9411": { "label": "Zipkin" },
+    "3001": { "label": "Grafana" },
+    "8025": { "label": "MailHog UI" }
+  },
+
+  "postCreateCommand": "mvn clean compile -DskipTests -q",
+
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb"
+  },
+
+  "remoteUser": "root"
+}

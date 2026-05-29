@@ -1,0 +1,44 @@
+{{- range $name, $config := .Values.services }}
+{{- if $config.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name | kebabcase }}
+  labels:
+    app: {{ $name | kebabcase }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ $name | kebabcase }}
+  template:
+    metadata:
+      labels:
+        app: {{ $name | kebabcase }}
+    spec:
+      containers:
+        - name: {{ $name | kebabcase }}
+          image: "{{ $.Values.global.image.repository }}/{{ $name | kebabcase }}:{{ $.Values.global.image.tag }}"
+          imagePullPolicy: {{ $.Values.global.image.pullPolicy }}
+          ports:
+            - containerPort: {{ $config.port }}
+          env:
+            - name: SERVER_PORT
+              value: "{{ $config.port }}"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name | kebabcase }}
+spec:
+  selector:
+    app: {{ $name | kebabcase }}
+  ports:
+    - protocol: TCP
+      port: {{ $config.port }}
+      targetPort: {{ $config.port }}
+---
+{{- end }}
+{{- end }}

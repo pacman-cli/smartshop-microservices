@@ -6,12 +6,17 @@ import com.smartshop.product.dto.ProductResponse;
 import com.smartshop.product.dto.StockItem;
 import com.smartshop.product.entity.Category;
 import com.smartshop.product.entity.Product;
+import com.smartshop.product.entity.IdempotencyRecord;
 import com.smartshop.product.exception.DuplicateSkuException;
 import com.smartshop.product.exception.InsufficientStockException;
 import com.smartshop.product.exception.ProductNotFoundException;
 import com.smartshop.product.repository.ProductRepository;
+import com.smartshop.product.repository.IdempotencyRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -30,8 +35,12 @@ import java.util.stream.Collectors;
 public class ProductService {
 
     private static final int MAX_PAGE_SIZE = 100;
+    private static final int LOW_STOCK_THRESHOLD = 5;
 
     private final ProductRepository productRepository;
+    private final IdempotencyRepository idempotencyRepository;
+    private final RedissonClient redissonClient;
+    private final MeterRegistry meterRegistry;
 
     public ProductResponse getProductById(Long id) {
         log.info("Fetching product with id: {}", id);
@@ -128,8 +137,7 @@ public class ProductService {
     @Transactional
     public void deleteProduct(Long id) {
         Product product = findProductOrThrow(id);
-        product.setActive(false);
-        productRepository.save(product);
+        productRepository.delete(product); // This triggers @SQLDelete soft delete
         log.info("Product soft-deleted: {} (id={})", product.getName(), product.getId());
     }
 
@@ -138,20 +146,34 @@ public class ProductService {
      */
     @Transactional
     public ProductResponse reduceStock(Long productId, int quantity) {
-        Product product = findProductOrThrow(productId);
+        RLock lock = redissonClient.getLock("lock:product:stock:" + productId);
+        lock.lock();
+        try {
+            Product product = findProductOrThrow(productId);
 
-        if (!product.hasStock(quantity)) {
-            throw new InsufficientStockException(
-                    "Insufficient stock for product: " + product.getName() +
-                    " (available: " + product.getQuantity() + ", requested: " + quantity + ")");
+            if (!product.hasStock(quantity)) {
+                throw new InsufficientStockException(
+                        "Insufficient stock for product: " + product.getName() +
+                        " (available: " + product.getQuantity() + ", requested: " + quantity + ")");
+            }
+
+            product.reduceStock(quantity);
+            Product updated = productRepository.save(product);
+            log.info("Stock reduced for product {} by {} units (remaining: {})",
+                    product.getName(), quantity, updated.getQuantity());
+
+            // Metrics
+            meterRegistry.counter("smartshop.products.stock.reduced", "product", product.getSku()).increment(quantity);
+            if (updated.getQuantity() < LOW_STOCK_THRESHOLD) {
+                meterRegistry.counter("smartshop.products.stock.low", "product", product.getSku()).increment();
+            }
+
+            return mapToResponse(updated);
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
         }
-
-        product.reduceStock(quantity);
-        Product updated = productRepository.save(product);
-        log.info("Stock reduced for product {} by {} units (remaining: {})",
-                product.getName(), quantity, updated.getQuantity());
-
-        return mapToResponse(updated);
     }
 
     /**
@@ -160,81 +182,160 @@ public class ProductService {
      */
     @Transactional
     public ProductResponse restoreStock(Long productId, int quantity) {
-        Product product = findProductOrThrow(productId);
+        RLock lock = redissonClient.getLock("lock:product:stock:" + productId);
+        lock.lock();
+        try {
+            Product product = findProductOrThrow(productId);
 
-        product.setQuantity(product.getQuantity() + quantity);
-        Product updated = productRepository.save(product);
-        log.info("Stock restored for product {} by {} units (new total: {})",
-                product.getName(), quantity, updated.getQuantity());
+            product.setQuantity(product.getQuantity() + quantity);
+            Product updated = productRepository.save(product);
+            log.info("Stock restored for product {} by {} units (new total: {})",
+                    product.getName(), quantity, updated.getQuantity());
 
-        return mapToResponse(updated);
+            return mapToResponse(updated);
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
     }
 
     /**
      * Atomically reduce stock for multiple products in a single transaction.
-     * Validates ALL products and stock levels first, then reduces all at once.
-     * If any product doesn't exist or has insufficient stock, the entire
-     * operation is rolled back (no partial reductions).
      */
     @Transactional
     public List<ProductResponse> batchReduceStock(BatchStockRequest request) {
-        log.info("Batch reducing stock for {} items", request.getItems().size());
+        log.info("Batch reducing stock for {} items (key: {})", 
+                request.getItems().size(), request.getIdempotencyKey());
 
-        // 1. Load all products at once
+        if (request.getIdempotencyKey() != null && 
+            idempotencyRepository.existsByIdempotencyKeyAndOperationType(request.getIdempotencyKey(), "REDUCE")) {
+            log.info("Stock already reduced for key: {}. Skipping.", request.getIdempotencyKey());
+            List<Long> ids = request.getItems().stream().map(StockItem::getProductId).toList();
+            return productRepository.findAllById(ids).stream().map(this::mapToResponse).toList();
+        }
+
         List<Long> productIds = request.getItems().stream()
                 .map(StockItem::getProductId)
-                .collect(Collectors.toList());
-        List<Product> products = productRepository.findAllById(productIds);
+                .distinct()
+                .sorted()
+                .toList();
 
-        Map<Long, Product> productMap = products.stream()
-                .collect(Collectors.toMap(Product::getId, p -> p));
+        List<RLock> locks = productIds.stream()
+                .map(id -> redissonClient.getLock("lock:product:stock:" + id))
+                .toList();
 
-        // 2. Validate ALL items before making any changes
-        for (StockItem item : request.getItems()) {
-            Product product = productMap.get(item.getProductId());
-            if (product == null) {
-                throw new ProductNotFoundException("Product not found with id: " + item.getProductId());
+        try {
+            for (RLock lock : locks) {
+                lock.lock();
             }
-            if (!product.hasStock(item.getQuantity())) {
-                throw new InsufficientStockException(
-                        "Insufficient stock for product: " + product.getName() +
-                        " (available: " + product.getQuantity() + ", requested: " + item.getQuantity() + ")");
+
+            List<Product> products = productRepository.findAllById(productIds);
+            Map<Long, Product> productMap = products.stream()
+                    .collect(Collectors.toMap(Product::getId, p -> p));
+
+            for (StockItem item : request.getItems()) {
+                Product product = productMap.get(item.getProductId());
+                if (product == null) {
+                    throw new ProductNotFoundException("Product not found with id: " + item.getProductId());
+                }
+                if (!product.hasStock(item.getQuantity())) {
+                    throw new InsufficientStockException(
+                            "Insufficient stock for product: " + product.getName() +
+                            " (available: " + product.getQuantity() + ", requested: " + item.getQuantity() + ")");
+                }
+            }
+
+            List<ProductResponse> results = new ArrayList<>();
+            for (StockItem item : request.getItems()) {
+                Product product = productMap.get(item.getProductId());
+                product.reduceStock(item.getQuantity());
+                Product updated = productRepository.save(product);
+                log.info("Batch: stock reduced for product {} by {} units (remaining: {})",
+                        product.getName(), item.getQuantity(), updated.getQuantity());
+                results.add(mapToResponse(updated));
+
+                // Metrics
+                meterRegistry.counter("smartshop.products.stock.reduced", "product", product.getSku()).increment(item.getQuantity());
+                if (updated.getQuantity() < LOW_STOCK_THRESHOLD) {
+                    meterRegistry.counter("smartshop.products.stock.low", "product", product.getSku()).increment();
+                }
+            }
+
+            if (request.getIdempotencyKey() != null) {
+                idempotencyRepository.save(IdempotencyRecord.builder()
+                        .idempotencyKey(request.getIdempotencyKey())
+                        .operationType("REDUCE")
+                        .build());
+            }
+
+            return results;
+        } finally {
+            for (int i = locks.size() - 1; i >= 0; i--) {
+                RLock lock = locks.get(i);
+                if (lock.isHeldByCurrentThread()) {
+                    lock.unlock();
+                }
             }
         }
-
-        // 3. All validations passed — reduce stock for all items
-        List<ProductResponse> results = new ArrayList<>();
-        for (StockItem item : request.getItems()) {
-            Product product = productMap.get(item.getProductId());
-            product.reduceStock(item.getQuantity());
-            Product updated = productRepository.save(product);
-            log.info("Batch: stock reduced for product {} by {} units (remaining: {})",
-                    product.getName(), item.getQuantity(), updated.getQuantity());
-            results.add(mapToResponse(updated));
-        }
-
-        return results;
     }
 
     /**
      * Atomically restore stock for multiple products in a single transaction.
-     * Used when an order with multiple items is cancelled or payment fails.
      */
     @Transactional
     public List<ProductResponse> batchRestoreStock(BatchStockRequest request) {
-        log.info("Batch restoring stock for {} items", request.getItems().size());
+        log.info("Batch restoring stock for {} items (key: {})", 
+                request.getItems().size(), request.getIdempotencyKey());
 
-        List<ProductResponse> results = new ArrayList<>();
-        for (StockItem item : request.getItems()) {
-            Product product = findProductOrThrow(item.getProductId());
-            product.setQuantity(product.getQuantity() + item.getQuantity());
-            Product updated = productRepository.save(product);
-            log.info("Batch: stock restored for product {} by {} units (new total: {})",
-                    product.getName(), item.getQuantity(), updated.getQuantity());
-            results.add(mapToResponse(updated));
+        if (request.getIdempotencyKey() != null && 
+            idempotencyRepository.existsByIdempotencyKeyAndOperationType(request.getIdempotencyKey(), "RESTORE")) {
+            log.info("Stock already restored for key: {}. Skipping.", request.getIdempotencyKey());
+            List<Long> ids = request.getItems().stream().map(StockItem::getProductId).toList();
+            return productRepository.findAllById(ids).stream().map(this::mapToResponse).toList();
         }
 
-        return results;
+        List<Long> productIds = request.getItems().stream()
+                .map(StockItem::getProductId)
+                .distinct()
+                .sorted()
+                .toList();
+
+        List<RLock> locks = productIds.stream()
+                .map(id -> redissonClient.getLock("lock:product:stock:" + id))
+                .toList();
+
+        try {
+            for (RLock lock : locks) {
+                lock.lock();
+            }
+
+            List<ProductResponse> results = new ArrayList<>();
+            for (StockItem item : request.getItems()) {
+                Product product = findProductOrThrow(item.getProductId());
+                product.setQuantity(product.getQuantity() + item.getQuantity());
+                Product updated = productRepository.save(product);
+                log.info("Batch: stock restored for product {} by {} units (new total: {})",
+                        product.getName(), item.getQuantity(), updated.getQuantity());
+                results.add(mapToResponse(updated));
+            }
+
+            if (request.getIdempotencyKey() != null) {
+                idempotencyRepository.save(IdempotencyRecord.builder()
+                        .idempotencyKey(request.getIdempotencyKey())
+                        .operationType("RESTORE")
+                        .build());
+            }
+
+            return results;
+        } finally {
+            for (int i = locks.size() - 1; i >= 0; i--) {
+                RLock lock = locks.get(i);
+                if (lock.isHeldByCurrentThread()) {
+                    lock.unlock();
+                }
+            }
+        }
     }
 
     private Product findProductOrThrow(Long id) {

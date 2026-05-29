@@ -55,4 +55,4 @@ logging:
 
 # JWT Configuration (must match user-service)
 jwt:
-  secret: smartshop-secret-key-for-jwt-token-generation-min-256-bits-long-key
+  secret: ${JWT_SECRET:smartshop-secret-key-for-jwt-token-generation-min-256-bits-long-key}

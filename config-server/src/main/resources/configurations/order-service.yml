@@ -54,7 +54,7 @@ spring.kafka:
     key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
     value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
     properties:
-      spring.json.trusted.packages: "*"
+      spring.json.trusted.packages: com.smartshop.contracts.event
 
 # Resilience4j Circuit Breaker
 resilience4j:
@@ -68,6 +68,9 @@ resilience4j:
         wait-duration-in-open-state: 10s
         permitted-number-of-calls-in-half-open-state: 3
         sliding-window-type: COUNT_BASED
+        ignore-exceptions:
+          - feign.FeignException.NotFound
+          - feign.FeignException.BadRequest
       userService:
         register-health-indicator: true
         sliding-window-size: 10
@@ -76,12 +79,33 @@ resilience4j:
         wait-duration-in-open-state: 10s
         permitted-number-of-calls-in-half-open-state: 3
         sliding-window-type: COUNT_BASED
+        ignore-exceptions:
+          - feign.FeignException.NotFound
+          - feign.FeignException.BadRequest
   timelimiter:
     instances:
       productService:
         timeout-duration: 5s
       userService:
         timeout-duration: 5s
+  bulkhead:
+    instances:
+      productService:
+        max-concurrent-calls: 10
+        max-wait-duration: 0
+      userService:
+        max-concurrent-calls: 10
+        max-wait-duration: 0
+  thread-pool-bulkhead:
+    instances:
+      productService:
+        max-thread-pool-size: 10
+        core-thread-pool-size: 5
+        queue-capacity: 20
+      userService:
+        max-thread-pool-size: 10
+        core-thread-pool-size: 5
+        queue-capacity: 20
 
 # Feign client timeouts
 spring.cloud.openfeign:
@@ -95,7 +119,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus,metrics
   endpoint:
     health:
       probes:

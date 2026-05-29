@@ -48,14 +48,14 @@ eureka:
 
 # JWT Configuration
 jwt:
-  secret: smartshop-secret-key-for-jwt-token-generation-min-256-bits-long-key
+  secret: ${JWT_SECRET:smartshop-secret-key-for-jwt-token-generation-min-256-bits-long-key}
   expiration: 86400000  # 24 hours in milliseconds
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus,metrics
   endpoint:
     health:
       probes:
