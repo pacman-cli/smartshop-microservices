@@ -9,7 +9,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/smartshop
 
 jobs:
   build-and-push:
@@ -42,10 +41,21 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      mailhog:
+        image: mailhog/mailhog:latest
+        ports:
+          - 1025:1025
+        options: >-
+          --health-cmd "wget -q http://localhost:8025 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
       kafka:
         image: confluentinc/cp-kafka:7.5.0
         env:
           KAFKA_NODE_ID: 1
+          CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
           KAFKA_PROCESS_ROLES: broker,controller
           KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
           KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
@@ -90,7 +100,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set lower case owner name
+        if: github.event_name != 'pull_request'
+        run: |
+          REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_PREFIX=${REPO}" >> $GITHUB_ENV
+
       - name: Extract metadata (tags, labels)
+        if: github.event_name != 'pull_request'
         id: meta
         uses: docker/metadata-action@v5
         with:
