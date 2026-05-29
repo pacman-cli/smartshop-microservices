@@ -106,7 +106,6 @@ jobs:
           echo "IMAGE_PREFIX=${REPO}" >> $GITHUB_ENV
 
       - name: Extract metadata (tags, labels)
-        if: github.event_name != 'pull_request'
         id: meta
         uses: docker/metadata-action@v5
         with:

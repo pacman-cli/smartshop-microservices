@@ -1,0 +1,9 @@
+--- .github/workflows/publish.yml
++++ .github/workflows/publish.yml
+@@ -107,6 +107,7 @@
+
+       - name: Extract metadata (tags, labels)
++        if: github.event_name != 'pull_request'
+         id: meta
+         uses: docker/metadata-action@v5
+         with:
