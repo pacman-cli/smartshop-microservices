@@ -1,0 +1,10 @@
+--- .github/workflows/publish.yml
++++ .github/workflows/publish.yml
+@@ -100,6 +100,7 @@
+           password: ${{ secrets.GITHUB_TOKEN }}
+
+       - name: Set lower case owner name
++        if: github.event_name != 'pull_request'
+         run: |
+           REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+           echo "IMAGE_PREFIX=${REPO}" >> $GITHUB_ENV
